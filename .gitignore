@@ -1,0 +1,9 @@
+.Rhistory
+.RData
+.Rproj.user/
+manuscript/letter.pdf
+manuscript/letter.docx
+manuscript/tables/Table_1_Weapon_Deliver_Probabilities_Eren_2026.csv 
+manuscript/figures/Figure_1.png
+*.knit.md
+*.utf8.md

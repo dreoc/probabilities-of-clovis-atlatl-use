@@ -1,0 +1,37 @@
+setting,value,description,location
+clovis_young,12710,Younger Clovis boundary BP,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [model]
+clovis_old,13340,Older Clovis boundary BP,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]
+h,0.5,Wood survival mixture weight,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [age_kernel]
+guyette_k,0.000221,Slow wood decay rate,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [age_kernel]
+perez_k,0.0093,Fast wood decay rate,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [age_kernel]
+site_offset,2176.4,Site survival age offset,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [age_kernel]
+site_exponent,1.3925309,Site survival decay exponent,code.Rmd [prepare-chronology]; scripts/publication_results.R [Preservation]; models/chronology.stan [age_kernel]
+rate_shape,1,Deposition rate prior shape,code.Rmd [prepare-chronology]; models/chronology.stan [model]
+rate_rate,0.01,Deposition rate prior rate,code.Rmd [prepare-chronology]; models/chronology.stan [model]
+rate_unit,1000,Years per rate unit,code.Rmd [prepare-chronology]; models/chronology.stan [age_kernel]
+prior_absent,0.5,Chronology absence prior probability,"code.Rmd [prepare-chronology, bayes-factors]; models/chronology.stan [model]"
+q,0.5,Conditional bow presence prior,code.Rmd [classification]
+mu0,4.605170186,Log-TCSA prior center,"code.Rmd [clovis-morphology, reference-morphology]; models/clovis_target.stan [model]; models/reference_morphology.stan [model]"
+mu0_sd,2,Prior center standard deviation,"code.Rmd [clovis-morphology, reference-morphology]; models/clovis_target.stan [model]; models/reference_morphology.stan [model]"
+sigma_scale,1,Residual scale prior SD,"code.Rmd [clovis-morphology, reference-morphology]; models/clovis_target.stan [model]; models/reference_morphology.stan [model]"
+tau_dataset_scale,0.5,Dataset variation prior SD,code.Rmd [reference-morphology]; models/reference_morphology.stan [model]
+tau_group_scale,0.5,Group variation prior SD,code.Rmd [reference-morphology]; models/reference_morphology.stan [model]
+tau_class_scale,1,Class variation prior SD,code.Rmd [reference-morphology]; models/reference_morphology.stan [model]
+calendar_cell,5,Calendar cell width years,code.Rmd [prepare-chronology]
+calendar_order_atlatl,10,Atlatl quadrature node count,code.Rmd [prepare-chronology]
+calendar_order_bow,16,Bow quadrature node count,code.Rmd [prepare-chronology]
+chains,5,Total chains per fit,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+parallel_chains,5,Simultaneously running chains,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+threads_per_chain,1,Threads per chain,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+warmup,2000,Warmup iterations per chain,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+retained,10000,Retained iterations per chain,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+adapt_delta,0.999,Target acceptance probability,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+max_treedepth,14,Maximum sampling tree depth,"code.Rmd [convergence, fit-chronology, clovis-morphology, reference-morphology]"
+seed_atlatl,54321,Atlatl sampling seed,code.Rmd [fit-chronology]
+seed_bow,54321,Bow sampling seed,code.Rmd [fit-chronology]
+seed_clovis,54321,Clovis sampling seed,code.Rmd [clovis-morphology]
+seed,54321,Reference seed base,code.Rmd [reference-morphology]
+sig_figs,18,Saved CSV significant digits,"code.Rmd [fit-chronology, clovis-morphology, reference-morphology]"
+refresh,100,Sampling progress print interval,"code.Rmd [fit-chronology, clovis-morphology]"
+reference_refresh,200,Reference progress print interval,code.Rmd [reference-morphology]
+batches,20,MCSE batches per chain,"code.Rmd [clovis-prediction, reference-morphology]"

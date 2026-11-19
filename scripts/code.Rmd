@@ -1,0 +1,870 @@
+---
+title: "Code for the probabilities of Clovis atlatl use"
+bibliography: ../manuscript/formatting/references.bib
+csl: ../manuscript/formatting/chicago-author-date.csl
+nocite: |
+  @RCoreTeam, @CmdStanR, @Hughes1998, @Shea2006, @Thomas1978, @Shott1997, @Clarkson2016, @Wan2014, @SheaDavisBrown2001, @SheaBrownDavis2002, @SahleLombard2024, @SahleAhmedDira2023, @Lombard2024, @Gramly1982, @Eren2022, @Eren2026, @Buchanan2026, @BergerLibby1967, @Hare2012, @Reimer2020, @GolubWelsch1969, @Kingman1993, @Guyette2008, @Perez2022, @Surovell2009, @Carpenter2017, @HoffmanGelman2014, @Vehtari2021, @KnellEtAl2026, @KassRaftery1995, @FlegalJones2010
+output:
+  html_document:
+    toc: true
+    toc_float:
+      toc_collapsed: true
+params:
+  mode: "report"
+  results_source: "frozen"
+  run_id: "run1"
+  saved_draw_dir: "../results/frozen/run1"
+  save_draws: true
+  show_code: true
+---
+
+# Setup
+
+This code reads the data, fits models, calculates predictions, summarizes results, and draws the necessary plots to reproduce the short manuscript **The probabilities of Clovis atlatl use** by *Erik R. Otárola-Castillo* and *Benjamin J. Schoville*. The frozen model and its results are included in the manuscript's final replication, which can be constructed by knitting `manuscript/letter.rmd`, producing a "read-only" Rmarkdown file that reproduces the MS word file. 
+
+The code formatting follows the reproducible RMarkdown and Stan frameworks used in @OtarolaCastillo2018 and Otárola-Castillo et al. [-@OtarolaCastillo2020; -@OtarolaCastillo2022;-@OtarolaCastillo2023].
+
+The archaeological approach utilized here builds on earlier Bayesian models that used stone point morphology to infer stone-weapon delivery-technology. These examples were outlined by @OtarolaCastillo2018 and @OtarolaCastillo2023. Additional routines for working with posterior draws from models fitted in Stan through the R brms package, from scratch - so to speak, appear in @Perri2019. See the end of this document for reference manuscript and code links.
+
+Like in the works referenced above, the code presented here is not optimized to run as efficient software but rather to present the numerical work in a progressive, logical, and transparent manner.
+
+```{r setup, echo = params$show_code}
+########################
+# clear memory except the parameters list-object declared in the yaml code
+########################
+rm(list = setdiff(ls(), "params"))
+
+########################
+# Install only missing packages.
+########################
+required <- c(
+  "knitr",
+  "rmarkdown",
+  "posterior",
+  "ggplot2",
+  "patchwork",
+  "ragg",
+  "statmod",
+  "kableExtra"
+)
+
+missing <- required[
+  !vapply(required, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing) > 0) {
+  install.packages(missing)
+}
+
+########################
+# Three ways to run this code. The default is to "report." This mode only reads completed results.
+# recalculate uses computed chronology data and refits morphology models only.
+# refit refits everything.
+# "params" object comes from the yaml header above
+########################
+mode <- params$mode                       # "report", "refit", or "recalculate"
+results_source <- params$results_source   # "frozen", "refit", or "recalculate"
+run_id <- params$run_id                   # Output/report folder name;
+saved_result_dir <- params$saved_draw_dir # Recalculate reads draws here;
+save_draws <- params$save_draws           # TRUE keeps draws for later recalculation
+show_code <- params$show_code             # TRUE displays code
+
+calculate <- mode %in% c("refit", "recalculate")
+
+########################
+# Load the libraries. 
+# R: R Core Team (2026); CmdStanR: Gabry et al. (2025).
+########################
+library(knitr); library(statmod)
+
+########################
+# from stan: we recommend running this in a fresh R session or restarting your current session
+# install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+# then install cmdstanr::install_cmdstan() 
+# then call library cmdstanr IFF parameter mode is to refit
+########################
+if (mode=="refit") library(cmdstanr)
+
+########################
+# For ease of replication, all paths in Rstudio are relative to the Rstudio project.
+########################
+knitr::opts_chunk$set(echo = show_code, message = FALSE, warning = TRUE)
+options(stringsAsFactors = FALSE, digits = 17)
+frozen_dir <- "../results/frozen/run1"
+data_directory <- if (results_source == "frozen") frozen_dir else
+  file.path("../results", results_source, run_id)
+
+if (calculate) {
+  output_dir <- file.path("../results", mode, run_id)
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  data_directory <- output_dir
+  scratch_dir <- tempfile("clovis_")
+  dir.create(scratch_dir)
+  sampler_root <- scratch_dir
+  saved_draw_dir <- file.path(saved_result_dir, "morphology")
+}
+```
+
+# Get the data
+
+Calls the .csv files.
+
+```{r data}
+# Read all parameter values from csv file. Change those values for further sensitivity.
+settings <- read.csv("../data/settings.csv")
+s <- setNames(settings$value, settings$setting)
+
+########################
+# when recalculation is specified, only read the observations 
+########################
+if (calculate) {
+  ########################
+  # TCSA background: Hughes (1998); Shea (2006).
+  # Stone reference data: Thomas (1978); Shott (1997); Clarkson (2016).
+  # Clarkson log-quartile summaries prepared using Wan et al. (2014), eqs. 14 and 16.
+  # Thrusting summary: Shea (2006), Table 1; experiment: Shea et al. (2001, 2002).
+  # Ethiopian javelins: Sahle and Lombard (2024), SOM Data 2; Sahle et al. (2023).
+  # Nonlithic arrows: Lombard et al. (2024), Online Resource 1.
+  ########################
+  groups <- read.csv("../data/groups.csv")
+  
+  ########################
+  # Vail measurements come from Gramly (1982), Table 2.
+  ########################
+  vail <- read.csv("../data/vail.csv")
+  
+  ########################
+  # The Clovis summary data is from Eren et al. (2022), Tables 1 and 2.
+  ########################
+  eren <- read.csv("../data/eren.csv")
+  stages <- read.csv("../data/stages.csv")
+  prior_table <- read.csv("../data/prior.csv")
+  class_order <- prior_table$class
+  stage_order <- unique(stages$stage)
+}
+```
+
+# Prepare the chronology models
+Atlatl and bow chronologies are fitted separately. Each assumed to have had a deposition rate through time whenever the technology is present. We integrate small intervals to obtain the total likelihood that will contribute to the probability later on. The R code below prepares the integration intervals and passes them to the stan code.
+
+```{r prepare-chronology, eval = mode == "refit"}
+if (mode=="refit"){
+########################
+# Read the dated objects, measurements, and calibration curve.
+# Atlatl dates: Eren et al. (2026), S1; bow dates: Buchanan et al. (2026).
+########################
+specimens <- read.csv("../data/specimens.csv")
+
+########################
+# RC date uncertainty: Berger and Libby (1967), p. 480; Hare et al. (2012), Table 6.
+########################
+rcdate <- read.csv("../data/assays.csv")
+
+########################
+# IntCal20 calibration curve: Reimer et al. (2020), downloaded complete table for calibration inside stan code from https://intcal.org/curves.html. The advantage of doing this in stan is building the likelihood of the chronology while keeping together the lab errors, calibration-curve uncertainty, multiple assays per specimen, and preservation model. We do not run the chance of passing calibrated data whose assumptions do not align. Plus there is a speed advantage of writing the loops in stan's C++ vs. R code.
+########################
+curve <- read.csv("../data/intcal.csv", comment.char = "#", header = FALSE)
+curve <- curve[order(curve[[1]]), ]
+
+########################
+# Construct nodes to integrate calendar-age intervals using Gauss-Legendre quadrature (Golub and Welsch, 1969). statmod::gauss.quad() handles this. R prepares the quadrature grid, feeds it into stan to perform the radiocarbon likelihood integration, then estimates the posterior distribution of the deposition rate and the preservation weighted chronology. The deposition rate across calendar time within each technology's fit. Each rate (lambda) is estimated using a Poisson-process likelihood in chronology_model.stan (Kingman, 1993).
+########################
+cal_edges <- function(lo, hi) {
+  sort(unique(c(lo, hi, seq(lo, hi, by = s["calendar_cell"]),
+                curve[[1]][curve[[1]] > lo & curve[[1]] < hi])))
+}
+
+########################
+# Compile a single list of necessary inputs per throwing technology.
+########################
+chronology_data <- function(technology) {
+  ids <- specimens$record_id[specimens$technology_reported == technology]
+  a <- rcdate[rcdate$record_id %in% ids, ]
+  Q_mat <- as.integer(s[paste0("calendar_order_", technology)])
+  rule <- statmod:::gauss.quad(Q_mat)
+  edges <- cal_edges(0, as.vector(s["clovis_young"]))
+  ec <- cal_edges(as.vector(s["clovis_young"]), as.vector(s["clovis_old"]))
+  list(
+    N = length(ids), M = nrow(a), specimen_id = match(a$record_id, ids),
+    rc_age = a$age, rc_error = a$error, N_curve = nrow(curve),
+    cal_age = curve[[1]], cal_mean = curve[[2]], cal_sd = curve[[3]],
+    E = length(edges), edges = edges, E_clovis = length(ec), clovis_edges = ec,
+    Q_mat = Q_mat, qx = rule$nodes, qw = rule$weight,
+    h = as.vector(s["h"]),
+    # Clovis interval, following the Eren et al paper 2026. "_young" is most recent "_old" is older
+    clovis_young = as.vector(s["clovis_young"]), clovis_old = as.vector(s["clovis_old"]),
+    rate_unit = as.vector(s["rate_unit"]), rate_shape = as.vector(s["rate_shape"]),
+    rate_rate = as.vector(s["rate_rate"]),
+    prior_absent = as.vector(s["prior_absent"]),
+    # Wood-preservation curves freom Guyette et al. (2008); Perez et al. (2022).
+    guyette_k = as.vector(s["guyette_k"]), perez_k = as.vector(s["perez_k"]),
+    # archaeological site preservation function from Surovell et al. (2009).
+    site_offset = as.vector(s["site_offset"]), site_exponent = as.vector(s["site_exponent"])
+  )
+}
+
+chronology_starts <- c(80, 150, 100, 200)
+
+chronology_init <- function(chain_id) {
+  i <- (chain_id - 1L) %% length(chronology_starts) + 1L
+  list(lambda = chronology_starts[i])
+}
+
+atlatl_data <- chronology_data("atlatl")
+bow_data <- chronology_data("bow")
+
+########################
+# Compile the three stan models using cmdstanR, which uses all of stan's capabilities. Carpenter et al. (2017); Hoffman and Gelman (2014).
+########################
+chronology_model <- cmdstan_model("../models/chronology_model.stan")
+clovis_model <- cmdstan_model("../models/clovis_target.stan")
+reference_model <- cmdstan_model("../models/reference_morphology.stan")
+}
+```
+
+# Summarize convergence
+
+These are sampling diagnostics. We retain one for each fitted model.
+
+```{r convergence, eval = mode == "refit"}
+if (mode=="refit"){
+  diagnostic_summary <- data.frame()
+
+########################
+# provide R-hat and effective sample sizes, Aki Vehtari et al. (2021).
+########################
+convergence <- function(fit, name, variables) {
+  sm <- as.data.frame(posterior::summarise_draws(
+    fit$draws(variables), "rhat", "ess_bulk", "ess_tail"))
+  a <- fit$sampler_diagnostics(format = "draws_array")
+  ebfmi <- numeric(dim(a)[2])
+  for (chain in seq_len(dim(a)[2])) {
+    energy <- a[, chain, "energy__"]
+    ebfmi[chain] <- mean(diff(energy)^2) / var(energy)
+  }
+  data.frame(model = name, maximum_rhat = max(sm$rhat),
+    minimum_bulk_ess = min(sm$ess_bulk), minimum_tail_ess = min(sm$ess_tail),
+    divergences = sum(a[, , "divergent__"]),
+    treedepth_hits = sum(a[, , "treedepth__"] >= s["max_treedepth"]),
+    minimum_ebfmi = min(ebfmi))
+}
+
+}
+```
+
+# Fit the chronology
+
+```{r, fit-chron, eval= mode=="refit"}
+if (mode=="refit") {
+########################
+# Fit atlatl chronology.
+# parameter vals from read in .csv file, settings.
+########################
+dir.create(file.path(sampler_root, "atlatl"))
+atlatl_fit <- chronology_model$sample(
+  data = atlatl_data,
+  chains = as.integer(s["chains"]),
+  parallel_chains = as.integer(s["parallel_chains"]),
+  threads_per_chain = as.integer(s["threads_per_chain"]),
+  iter_warmup = as.integer(s["warmup"]),
+  iter_sampling = as.integer(s["retained"]),
+  adapt_delta = as.vector(s["adapt_delta"]),
+  max_treedepth = as.integer(s["max_treedepth"]), init = chronology_init,
+  seed = as.integer(s["seed_atlatl"]), output_dir = file.path(sampler_root, "atlatl"),
+  output_basename = "atlatl", save_warmup = FALSE, sig_figs = as.integer(s["sig_figs"]),
+  refresh = as.integer(s["refresh"])
+)
+
+########################
+# Save one numbered CSV per atlatl chain.
+########################
+if (save_draws) {
+  dir.create(file.path(output_dir, "atlatl"), showWarnings = FALSE)
+  atlatl_fit$save_output_files(
+    dir = file.path(output_dir, "atlatl"), basename = "atlatl",
+    timestamp = FALSE, random = FALSE
+  )
+}
+atlatl_fit$summary
+
+write.table(as.data.frame(atlatl_fit$summary(c("lambda", "p_absent"))),
+  file = "", quote = FALSE, row.names = FALSE, sep = "	")
+diagnostic_summary <- rbind(diagnostic_summary, convergence(atlatl_fit, "atlatl",
+  c("lambda", "p_absent", "lp__")))
+
+########################
+# Fit bow chronology.
+########################
+dir.create(file.path(sampler_root, "bow"))
+bow_fit <- chronology_model$sample(
+  data = bow_data,
+  chains = as.integer(s["chains"]),
+  parallel_chains = as.integer(s["parallel_chains"]),
+  threads_per_chain = as.integer(s["threads_per_chain"]),
+  iter_warmup = as.integer(s["warmup"]),
+  iter_sampling = as.integer(s["retained"]),
+  adapt_delta = as.vector(s["adapt_delta"]),
+  max_treedepth = as.integer(s["max_treedepth"]), init = chronology_init,
+  seed = as.integer(s["seed_bow"]), output_dir = file.path(sampler_root, "bow"),
+  output_basename = "bow", save_warmup = FALSE, sig_figs = as.integer(s["sig_figs"]),
+  refresh = as.integer(s["refresh"])
+)
+
+########################
+# Also save one numbered CSV per bow chain.
+########################
+if (save_draws) {
+  dir.create(file.path(output_dir, "bow"), showWarnings = FALSE)
+  bow_fit$save_output_files(
+    dir = file.path(output_dir, "bow"), basename = "bow",
+    timestamp = FALSE, random = FALSE
+  )
+}
+
+########################
+# report atlatl BF 
+write.table(as.data.frame(bow_fit$summary(c("lambda", "p_absent"))),
+  file = "", quote = FALSE, row.names = FALSE, sep = "	")
+diagnostic_summary <- rbind(diagnostic_summary, convergence(bow_fit, "bow",
+  c("lambda", "p_absent", "lp__")))
+########################
+}
+
+```
+
+# Calculate the Bayes factors
+
+Average the conditional absence/presence probabilities first, and calculate monte carlo standard error. Convert that conditional average into posterior odds, then divide by prior odds. 
+
+```{r bayes-factors, eval = calculate}
+if(calculate){
+########################
+# Bayes factor = Posterior odds divided by prior odds of two hypotheses (models). 
+# Kass and Raftery (1995), provide framework for interpreting the support of bayes factor values. 
+# See application in Knell et al 2026 (https://www.researchgate.net/publication/416895962_The_Spatiotemporal_Distribution_of_Terminal_PleistoceneEarly_Holocene_Stemmed_Points_across_Western_North_America#full-text).
+########################
+bayes_factors <- data.frame()
+for (technology in c("atlatl", "bow")) {
+  if (mode == "refit") {
+    fit <- if (technology == "atlatl") atlatl_fit else bow_fit
+    p_array <- fit$draws("p_absent", format = "draws_array")
+    p_draws <- matrix(p_array[, , 1], nrow = dim(p_array)[1], ncol = dim(p_array)[2])
+  } else {
+    # Read the saved chain count and length.
+    chain_files <- list.files(file.path(saved_result_dir, technology),
+      pattern = paste0("^", technology, "-[0-9]+\\.csv$"), full.names = TRUE)
+    saved_probabilities <- vector("list", length(chain_files))
+    for (chain in seq_along(chain_files)) {
+      file <- chain_files[chain]
+      saved <- read.csv(file, comment.char = "#", check.names = FALSE)
+      saved_probabilities[[chain]] <- saved$p_absent
+      if (save_draws) {
+        dir.create(file.path(output_dir, technology), showWarnings = FALSE)
+        file.copy(file, file.path(output_dir, technology, basename(file)), overwrite = TRUE)
+      }
+    }
+    p_draws <- do.call(cbind, saved_probabilities)
+  }
+  p <- mean(p_draws)
+  p_mcse <- posterior::mcse_mean(p_draws)
+  # convert probabilities to log odds w qlogis
+  log_bf <- qlogis(p) - qlogis(as.vector(s["prior_absent"]))
+  log_bf_mcse <- p_mcse / (p * (1 - p))
+  bayes_factors <- rbind(bayes_factors, data.frame(
+    technology = technology, posterior_absent = p, p_absent_mcse = p_mcse,
+    log_bf = log_bf, bayes_factor = exp(log_bf), log_bf_mcse = log_bf_mcse,
+    bf_mcse = exp(log_bf) * log_bf_mcse))
+}
+
+########################
+# Combine the two technologies.
+########################
+log_bf <- setNames(bayes_factors$log_bf, bayes_factors$technology)
+log_bf_mcse <- setNames(bayes_factors$log_bf_mcse, bayes_factors$technology)
+chronology <- data.frame(atlatl_present = c(0, 0, 1, 1), bow_present = c(0, 1, 0, 1),
+  log_relative_evidence = as.vector(c(0, -log_bf["bow"], -log_bf["atlatl"], -sum(log_bf))))
+if (mode == "recalculate") diagnostic_summary <- read.csv(file.path(saved_result_dir, "diagnostics.csv"))
+}
+```
+
+# Transition to morphology and fit the Clovis and reference log-TCSA models
+
+```{r clovis-morphology, eval = calculate}
+if(calculate){
+  run_dir <- file.path(output_dir, "morphology")
+if (save_draws) dir.create(run_dir)
+if (mode == "refit") {
+  target_dir <- file.path(scratch_dir, "morphology", "target")
+  dir.create(target_dir, recursive = TRUE)
+  
+  ########################
+  # read in data, control, parameter, and hyperparameter values
+  ########################
+  clovis_fit <- clovis_model$sample(
+    data = list(
+      N_vail = nrow(vail),
+      vail_tcsa = vail$tcsa_mm2,
+      N_plains = eren$n,
+      plains_mean_tcsa = eren$mean_mm2,
+      plains_sd_tcsa = eren$sd_mm2,
+      mu0 = s["mu0"],
+      mu0_sd = s["mu0_sd"],
+      sigma_scale = s["sigma_scale"]
+    ),
+    chains = as.integer(s["chains"]),
+    parallel_chains = as.integer(s["parallel_chains"]),
+    threads_per_chain = as.integer(s["threads_per_chain"]),
+    iter_warmup = as.integer(s["warmup"]),
+    iter_sampling = as.integer(s["retained"]),
+    adapt_delta = as.vector(s["adapt_delta"]),
+    max_treedepth = as.integer(s["max_treedepth"]),
+    seed = as.integer(s["seed_clovis"]),
+    output_dir = target_dir, save_warmup = FALSE,
+    sig_figs = as.integer(s["sig_figs"]), refresh = as.integer(s["refresh"])
+  )
+  diagnostic_summary <- rbind(diagnostic_summary,
+    convergence(clovis_fit, "target", c("mu", "sigma", "lp__")))
+  
+  sum.tbl <- clovis_fit$summary(c("mu", "sigma"))
+  
+  write.table(as.data.frame(sum.tbl),
+    file = "", quote = FALSE, row.names = FALSE, sep = "	")
+
+  d <- posterior::as_draws_df(
+    clovis_fit$draws(c("mu", "sigma"))
+  )
+
+  target_draws <- data.frame(
+    chain = d$.chain,
+    iteration = d$.iteration,
+    mean = d$mu,
+    sd = d$sigma
+  )
+} else {
+  target_draws <- read.csv(
+    file.path(saved_draw_dir, "target_draws.csv")
+  )
+  target_draws <- target_draws[, c("chain", "iteration", "mean", "sd")]
+}
+}
+
+```
+
+# Predict Clovis point TCSA
+
+Average predictive densities over the target posterior. Batch-estimates retain
+the accepted Monte Carlo error calculation.
+
+```{r clovis-prediction, eval = calculate}
+if(calculate){
+target_draws <- target_draws[order(target_draws$chain, target_draws$iteration), ]
+  
+########################
+# Batch-means Monte Carlo error following Flegal and Jones (2010).
+########################
+target_draws$batch <- NA_integer_
+
+for (chain in unique(target_draws$chain)) {
+  ix <- which(target_draws$chain == chain)
+
+  target_draws$batch[ix] <-
+    (chain - 1) * s["batches"] +
+    pmin(
+      s["batches"],
+      ceiling(seq_along(ix) / (length(ix) / s["batches"]))
+    )
+}
+y <- sort(unique(round(c(
+  seq(-20, 30, by = 0.025),
+  seq(0, 8, by = 0.005)
+), 12)))
+
+delta <- diff(y)
+
+quadrature <- c(
+  delta[1] / 2,
+  (head(delta, -1) + tail(delta, -1)) / 2,
+  tail(delta, 1) / 2
+)
+
+B <- max(target_draws$batch)
+target_density <- numeric(length(y))
+target_batches <- matrix(0, B, length(y))
+batch_sizes <- as.numeric(table(target_draws$batch))
+
+for (first in seq(1, length(y), by = 64)) {
+  ix <- first:min(first + 63, length(y))
+  values <- matrix(0, nrow(target_draws), length(ix))
+
+  for (j in seq_along(ix)) {
+    values[, j] <- dnorm(
+      y[ix[j]],
+      target_draws$mean,
+      target_draws$sd
+    )
+  }
+
+  target_density[ix] <- colMeans(values)
+
+  target_batches[, ix] <-
+    rowsum(
+      values,
+      target_draws$batch,
+      reorder = FALSE
+    ) / batch_sizes
+}
+
+if (save_draws)
+  write.csv(target_draws, file.path(run_dir, "target_draws.csv"), row.names = FALSE)
+}
+
+```
+
+# Fit the reference groups and predict their TCSA values
+
+The three cumulative comparisons are fitted separately. The same calculation
+is repeated for stone tips, then when adding Shea's thrusting, and added Lombard's tip data. First, compute posterior distributions for references and, separately for Clovis, given the current data. Then create posterior predictive densities of the references. We then evaluate the kth reference at multi
+
+```{r reference-morphology, eval = calculate}
+if (calculate){
+density_rows <- data.frame()
+morphology_results <- setNames(vector("list", length(stage_order)), stage_order)
+for (stage in stage_order) {
+  take <- match(stages$group_id[stages$stage == stage], groups$group_id)
+  g <- groups[take, ]
+  classes <- class_order[class_order %in% g$class]
+  datasets <- unique(g$dataset)
+  class_id <- match(g$class, classes)
+  dataset_id <- match(g$dataset, datasets)
+  n_deliv <- length(classes)
+  n_ref <- nrow(g)
+  prior0 <- as.matrix(prior_table[match(classes, class_order), c("absent", "present")])
+  prior0 <- prior0 / sum(prior0)
+  reference_density <- matrix(0, length(y), n_deliv)
+  reference_batches <- vector("list", n_deliv)
+  names(reference_batches) <- classes
+  if (mode == "refit") {
+    stage_dir <- file.path(scratch_dir, "morphology", stage)
+    dir.create(stage_dir, showWarnings = FALSE, recursive = TRUE)
+    stan_data <- list(n_deliv = n_deliv, n_ref = n_ref, ID = length(datasets), class_id = class_id,
+      dataset_id = dataset_id, n = as.integer(g$n), ybar = g$ybar, sse = g$sse,
+      mu0 = as.vector(s["mu0"]),
+      mu0_sd = as.vector(s["mu0_sd"]), tau_class_prior_scale = as.vector(s["tau_class_scale"]),
+      sigma0_prior_scale = as.vector(s["sigma_scale"]),
+      tau_dataset_prior_scale = as.vector(s["tau_dataset_scale"]),
+      tau_subgroup_prior_scale = as.vector(s["tau_group_scale"]))
+    fit <- reference_model$sample(
+      data = stan_data,
+      seed = as.integer(s["seed"] + match(stage, stage_order)),
+      chains = as.integer(s["chains"]),
+      parallel_chains = as.integer(s["parallel_chains"]),
+      threads_per_chain = as.integer(s["threads_per_chain"]),
+      iter_warmup = as.integer(s["warmup"]),
+      iter_sampling = as.integer(s["retained"]),
+      adapt_delta = as.vector(s["adapt_delta"]),
+      max_treedepth = as.integer(s["max_treedepth"]),
+      save_warmup = FALSE, sig_figs = as.integer(s["sig_figs"]),
+      output_dir = stage_dir, refresh = as.integer(s["reference_refresh"])
+    )
+    diagnostic_summary <- rbind(diagnostic_summary, convergence(fit, stage,
+      c("sigma0", "tau_dataset", "tau_subgroup", "tau_class", "mu_class", "lp__")))
+    write.table(as.data.frame(fit$summary(c(
+      "sigma0", "tau_dataset", "tau_subgroup", "tau_class", "mu_class"))),
+      file = "", quote = FALSE, row.names = FALSE, sep = "	")
+    draws <- as.data.frame(posterior::as_draws_df(fit$draws()))
+    draws <- draws[order(draws$.chain, draws$.iteration), ]
+    if (save_draws) {
+      dir.create(file.path(run_dir, stage), recursive = TRUE, showWarnings = FALSE)
+      write.csv(draws, file.path(run_dir, stage, "draws.csv"), row.names = FALSE)
+    }
+  } else {
+    draws <- read.csv(file.path(saved_draw_dir, stage, "draws.csv"),
+                      check.names = FALSE)
+    draws <- draws[order(draws$.chain, draws$.iteration), ]
+    if (save_draws) {
+      dir.create(file.path(run_dir, stage), recursive = TRUE, showWarnings = FALSE)
+      file.copy(file.path(saved_draw_dir, stage, "draws.csv"),
+                file.path(run_dir, stage, "draws.csv"), overwrite = TRUE)
+    }
+  }
+  N <- nrow(draws)
+  
+  ########################
+  # Batch-means Monte Carlo error: Flegal and Jones (2010).
+  ########################
+  batch <- integer(N)
+  for (chain in unique(draws$.chain)) {
+    ix <- which(draws$.chain == chain)
+    batch[ix] <- (chain - 1) * s["batches"] +
+      pmin(s["batches"], ceiling(seq_along(ix) / (length(ix) / s["batches"])))
+  }
+  same_dataset <- outer(class_id, class_id, "==") & outer(dataset_id, dataset_id, "==")
+  means <- variances <- matrix(0, N, n_ref)
+  residual_sd <- as.matrix(draws[, paste0("sigma_group[", seq_len(n_ref), "]"), drop = FALSE])
+  dataset_sd <- as.matrix(draws[, paste0("tau_dataset[", seq_len(n_deliv), "]"), drop = FALSE])
+  group_sd <- as.matrix(draws[, paste0("tau_subgroup[", seq_len(n_deliv), "]"), drop = FALSE])
+  for (i in seq_len(N)) {
+    class_covariance <- matrix(s["mu0_sd"]^2, n_deliv, n_deliv) + diag(draws[["tau_class[1]"]][i]^2, n_deliv)
+    covariance <- class_covariance[class_id, class_id, drop = FALSE] +
+      same_dataset * dataset_sd[i, class_id]^2
+    diag(covariance) <- diag(covariance) + group_sd[i, class_id]^2
+    observation_covariance <- covariance
+    diag(observation_covariance) <- diag(observation_covariance) + residual_sd[i, ]^2 / g$n
+    triangular <- chol(observation_covariance)
+    inverse <- chol2inv(triangular)
+    alpha <- drop(inverse %*% (g$ybar - s["mu0"]))
+    means[i, ] <- s["mu0"] + drop(covariance %*% alpha)
+    variances[i, ] <- diag(covariance) - rowSums((covariance %*% inverse) * covariance)
+  }
+  variances <- pmax(variances, 0)
+
+  batch_sizes <- as.numeric(table(batch))
+  for (k in seq_along(classes)) {
+    ix <- which(class_id == k)
+    group_weight <- g$n[ix] / sum(g$n[ix])
+    reference_batches[[k]] <- matrix(0, max(batch), length(y))
+    for (first in seq(1, length(y), by = 64)) {
+      grid <- first:min(first + 63, length(y))
+      values <- matrix(0, N, length(grid))
+      for (j in seq_along(ix)) {
+        h <- ix[j]
+        sd <- sqrt(variances[, h] + residual_sd[, h]^2)
+        for (v in seq_along(grid)) {
+          values[, v] <- values[, v] + group_weight[j] * dnorm(y[grid[v]], means[, h], sd)
+        }
+      }
+      reference_density[grid, k] <- colMeans(values)
+      reference_batches[[k]][, grid] <- rowsum(values, batch, reorder = FALSE) / batch_sizes
+    }
+
+  }
+  for (k in seq_along(classes)) {
+    density_rows <- rbind(density_rows, data.frame(stage = stage, class = classes[k],
+      log_tcsa = y, density_log = reference_density[, k]))
+  }
+  density_rows <- rbind(density_rows, data.frame(stage = stage, class = "Clovis",
+    log_tcsa = y, density_log = target_density))
+  morphology_results[[stage]] <- list(
+    classes = classes,
+    prior = prior0,
+    density = reference_density,
+    batches = reference_batches,
+    groups = g
+  )
+}
+}
+```
+
+# Combine chronology and morphology
+
+This weights the mean predictive densities by the earlier computed chronological evidence and the priors. Normalize at each tcsa, then average over the Clovis tcsa distribution, keep the Monte Carlo errors.
+
+```{r classification, eval = calculate}
+if(calculate){
+  q <- as.vector(s["q"])
+log_evidence <- matrix(chronology$log_relative_evidence, nrow = 2L, byrow = TRUE)
+evidence <- exp(log_evidence - max(log_evidence))
+probabilities <- data.frame()
+for (stage in stage_order) {
+  morphology <- morphology_results[[stage]]
+  classes <- morphology$classes
+  class_prior <- morphology$prior
+  reference_density <- morphology$density
+  reference_batches <- morphology$batches
+  n_deliv <- length(classes)
+  joint_prior <- array(0, c(n_deliv, 2L, 2L), dimnames = list(
+                         class = classes, atlatl_present = 0:1, bow_present = 0:1))
+  for (j in seq_along(classes)) {
+    bow_availability <- if (classes[j] == "bow") 1 else q
+    for (a in 1:2) {
+      joint_prior[j, a, 1] <- class_prior[j, a] * (1 - bow_availability)
+      joint_prior[j, a, 2] <- class_prior[j, a] * bow_availability
+    }
+  }
+  class_weights <- apply(sweep(joint_prior, c(2, 3), evidence, "*"), 1, sum)
+  weighted_density <- sweep(reference_density, 2, class_weights, "*")
+  denominator <- rowSums(weighted_density)
+  point_probability <- weighted_density / denominator
+  grid_weight <- quadrature * target_density
+  result <- colSums(sweep(point_probability, 1, grid_weight, "*"))
+  target_values <- target_batches %*% sweep(point_probability, 1, quadrature, "*")
+  target_mcse <- apply(target_values, 2, sd) / sqrt(nrow(target_values))
+  batch_count <- nrow(reference_batches[[classes[1]]])
+  influence <- matrix(0, batch_count, n_deliv)
+  for (j in seq_len(n_deliv)) {
+    variation <- sweep(reference_batches[[classes[j]]], 2, reference_density[, j], "-")
+    for (k in seq_len(n_deliv)) {
+      derivative <- (grid_weight / denominator) * (as.numeric(j == k) * class_weights[k] -
+                         point_probability[, k] * class_weights[j])
+      influence[, k] <- influence[, k] + drop(variation %*% derivative)
+    }
+  }
+  reference_mcse <- apply(influence, 2, sd) / sqrt(batch_count)
+  morphology_mcse <- sqrt(target_mcse^2 + reference_mcse^2)
+
+  weight_gradient <- matrix(0, n_deliv, 2)
+  for (j in seq_len(n_deliv)) {
+    for (a in 1:2) {
+      for (b in 1:2) {
+        contribution <- joint_prior[j, a, b] * evidence[a, b]
+        weight_gradient[j, 1] <- weight_gradient[j, 1] - (a - 1) * contribution
+        weight_gradient[j, 2] <- weight_gradient[j, 2] - (b - 1) * contribution
+      }
+    }
+  }
+  chronology_gradient <- matrix(0, n_deliv, 2)
+  for (t in 1:2) {
+    derivative_density <- sweep(reference_density, 2, weight_gradient[, t], "*")
+    derivative_probability <- derivative_density / denominator -
+       point_probability * (rowSums(derivative_density) / denominator)
+    chronology_gradient[, t] <- colSums(derivative_probability * grid_weight)
+  }
+  chronology_mcse <- sqrt(rowSums(sweep(chronology_gradient, 2,
+                              log_bf_mcse[c("atlatl", "bow")], "*")^2))
+  total_mcse <- sqrt(morphology_mcse^2 + chronology_mcse^2)
+
+  probabilities <- rbind(probabilities, data.frame(stage = stage, class = classes,
+    probability = as.vector(result), target_mcse = as.vector(target_mcse),
+    reference_mcse = as.vector(reference_mcse), morphology_mcse = as.vector(morphology_mcse),
+    chronology_mcse = as.vector(chronology_mcse), total_mcse = as.vector(total_mcse),
+    structure = "fixed", q = q))
+}
+
+}
+```
+
+# Save the recalculated results
+
+```{r save-results, eval = calculate}
+if(calculate){
+
+########################  
+# Save final data for the tables.
+########################
+write.csv(bayes_factors, file.path(output_dir, "bayes_factors.csv"), row.names = FALSE)
+write.csv(density_rows, file.path(output_dir, "density.csv"), row.names = FALSE)
+write.csv(probabilities, file.path(output_dir, "probabilities.csv"), row.names = FALSE)
+write.csv(diagnostic_summary, file.path(output_dir, "diagnostics.csv"), row.names = FALSE)
+}
+```
+
+# Read the selected results
+
+
+```{r selected-results}
+########################
+# "Report mode" begins here. It reads final results without recalculating or refitting.
+########################
+HomeFolder <- ".."
+source("../scripts/helper_functions.R", local = TRUE)
+diagnostics <- read.csv(file.path(data_directory, "diagnostics.csv"))
+cat("Results:", data_directory)
+
+########################
+# These values are for display only. sprintf() rounds them precisely to "%.3f" (3 decimals) or "%.2e" (2 decimal scientific notation). The resulting CSVs retain values with their full precision.
+########################
+chronology_table <- data.frame(
+  Technology = tools::toTitleCase(bayes_factors$technology),
+  Absence = sprintf("%.3f", bayes_factors$posterior_absent),
+  Presence = sprintf("%.3f", 1 - bayes_factors$posterior_absent),
+  BF_absence_presence = sprintf("%.3f", bayes_factors$bayes_factor),
+  MCSE_log_BF = sprintf("%.2e", bayes_factors$log_bf_mcse),
+  MCSE_BF = sprintf("%.2e", bayes_factors$bf_mcse))
+
+knitr::kable(chronology_table[1,], format = "pipe", row.names = FALSE,
+  col.names = c("Technology", "P(absence)", "P(presence)",
+    "BF (absence:presence)", "MCSE (log BF)", "MCSE (BF)"),
+  align = c("l", rep("r", 5)),
+  caption = "Clovis chronology: posterior probabilities and Bayes factors.")
+```
+
+# Table 1
+
+```{r table1}
+knitr::kable(table1$display, format = "pipe", row.names = FALSE,
+  col.names = c("Comparison", "Bow", "Atlatl", "Contact/thrusting",
+    "Short-range throwing/thrusting", "Hand-thrown"),
+  align = c("l", rep("r", 5)),
+  caption = "Clovis weapon-delivery probabilities.")
+```
+
+# Compare a new calculation with the frozen results
+
+```{r compare-results, eval = calculate, results = "asis"}
+if(calculate){
+
+########################
+# Display differences between new runs and the frozen runs without overiding files.
+########################
+frozen_bf <- read.csv(file.path(frozen_dir, "bayes_factors.csv"))
+frozen_probabilities <- read.csv(file.path(frozen_dir, "probabilities.csv"))
+i <- match(bayes_factors$technology, frozen_bf$technology)
+bf_comparison <- data.frame(Technology = bayes_factors$technology,
+  Frozen = sprintf("%.3f", frozen_bf$bayes_factor[i]),
+  Recalculated = sprintf("%.3f", bayes_factors$bayes_factor),
+  Difference = sprintf("%.2e", bayes_factors$bayes_factor - frozen_bf$bayes_factor[i]))
+cat("\n\n", paste(as.character(knitr::kable(bf_comparison,
+  format = "pipe", row.names = FALSE,
+  col.names = c("Technology", "Previous baseline", "New fit", "Difference"),
+  align = c("l", "r", "r", "r"),
+  caption = "Chronology Bayes factors: prior baseline versus new fit.")), collapse = "\n"), "\n\n", sep = "")
+i <- match(paste(probabilities$stage, probabilities$class),
+           paste(frozen_probabilities$stage, frozen_probabilities$class))
+probability_comparison <- data.frame(Stage = probabilities$stage, Class = probabilities$class,
+  Frozen = sprintf("%.3f", frozen_probabilities$probability[i]),
+  Recalculated = sprintf("%.3f", probabilities$probability),
+  Difference = sprintf("%.2e", probabilities$probability - frozen_probabilities$probability[i]),
+  MCSE = sprintf("%.2e", probabilities$total_mcse))
+comparison_display <- probability_comparison
+comparison_stages <- c(stone = "Stone tips", add_thrusting = "Add thrusting",
+  add_nonlithic = "Full comparison")
+comparison_classes <- c(bow = "Bow", atlatl = "Atlatl",
+  contact_thrusting = "Contact/thrusting",
+  short_dual_use = "Short-range throwing/thrusting", hand_thrown = "Hand-thrown")
+comparison_display$Stage <- as.vector(comparison_stages[comparison_display$Stage])
+comparison_display$Class <- as.vector(comparison_classes[comparison_display$Class])
+cat("\n\n", paste(as.character(knitr::kable(comparison_display,
+  format = "pipe", row.names = FALSE,
+  col.names = c("Comparison", "Weapon class", "Previous baseline",
+    "New fit", "Difference", "MCSE"),
+  align = c("l", "l", rep("r", 4)),
+  caption = "Delivery probabilities: frozen baseline vs new fit.")), collapse = "\n"), "\n\n", sep = "")
+
+}
+```
+
+# Sampling diagnostics
+
+```{r diagnostics-table}
+########################
+# Recalculate reports its source fits' diagnostics.
+########################
+diagnostic_labels <- c(atlatl = "Atlatl", bow = "Bow", target = "Clovis target",
+  stone = "Stone reference", add_thrusting = "Stone + thrusting",
+  add_nonlithic = "Full reference")
+diagnostics_display <- data.frame(Model = as.vector(diagnostic_labels[diagnostics$model]),
+  Rhat = sprintf("%.3f", diagnostics$maximum_rhat),
+  Bulk_ESS = sprintf("%.0f", diagnostics$minimum_bulk_ess),
+  Tail_ESS = sprintf("%.0f", diagnostics$minimum_tail_ess),
+  Divergences = diagnostics$divergences,
+  Treedepth_hits = diagnostics$treedepth_hits,
+  E_BFMI = sprintf("%.3f", diagnostics$minimum_ebfmi))
+knitr::kable(diagnostics_display, format = "pipe", row.names = FALSE,
+  col.names = c("Model", "Max. R-hat", "Min. bulk ESS", "Min. tail ESS",
+    "Divergences", "Treedepth hits", "Min. E-BFMI"),
+  align = c("l", rep("r", 6)),
+  caption = "Stan sampling diagnostics for all models.")
+```
+
+# Figure 1
+
+This figure is drawn from the selected saved densities and the frozen calibrated-date display. 
+
+```{r figure1, out.width = "100%"}
+knitr::include_graphics(figure_path)
+```
+
+# References cited
+
+::: {#refs}
+:::

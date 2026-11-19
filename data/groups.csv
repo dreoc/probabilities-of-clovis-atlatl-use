@@ -1,0 +1,18 @@
+group_id,class,label,dataset,type,n,ybar,sse
+G06,hand_thrown,Eth Heavy Javelin,Ethiopian_study,raw,32,4.745738949,0.4642056
+G07,hand_thrown,Eth Med Javelin,Ethiopian_study,raw,32,4.400447245,1.843062422
+G08,hand_thrown,Eth light javelin,Ethiopian_study,raw,33,3.633777624,0.760765937
+G09,short_dual_use,Ethiopian heavy/mixed,Ethiopian_study,raw,31,5.003003883,0.831875374
+G10,hand_thrown,Ethn Versitile javelin,Ethiopian_study,raw,35,4.126606476,1.427137739
+G17,bow,Arrowheads,Thomas,individual_verified,118,3.364636088,25.15627758
+G18,atlatl,Thomas dart tips,Thomas,individual_verified,9,3.960623922,1.406842976
+G19,atlatl,Shott dart tips,Shott,individual_verified,30,4.022150783,3.210829451
+G20,atlatl,Bifacial Points,Clarkson_compilation_unresolved,figure_log_quartiles,178,4.029192553,36.65778454
+G21,atlatl,Unifacial Points,Clarkson_compilation_unresolved,figure_log_quartiles,326,4.30019914,82.04182084
+G22,atlatl,Triangular Flake (Lancets),Clarkson_compilation_unresolved,figure_log_quartiles,256,4.238161501,199.0246796
+G23,atlatl,Leilira Points,Clarkson_compilation_unresolved,figure_log_quartiles,85,5.729811423,15.95377739
+G24,contact_thrusting,Shea undamaged simulated thrusting subset,Shea2006_experiment,summary,28,5.000281006,6.678880559
+G27,bow,Lombard SI1 authenticated nonlithic arrows,Lombard2022_SI1_museum,raw,167,2.700647007,67.93039629
+G28,atlatl,Backed microliths,Clarkson_compilation_unresolved,figure_log_quartiles,50,2.63207962,32.96222883
+G29,atlatl,Backed microliths extraction lower,Clarkson_compilation_unresolved,figure_log_quartiles,50,2.533701993,39.6611425
+G30,atlatl,Backed microliths extraction upper,Clarkson_compilation_unresolved,figure_log_quartiles,50,2.72025997,27.90249507

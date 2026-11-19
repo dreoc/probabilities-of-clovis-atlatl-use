@@ -1,0 +1,143 @@
+---
+title: "The probabilities of Clovis atlatl use"
+author: "Erik Otárola-Castillo^1^ and Benjamin J. Schoville^1^"
+knit: |-
+  (function(input, ...) {
+    stamp <- format(Sys.time(), "%Y-%m-%d_%H%M%S_%Z",
+                    tz = "America/Indiana/Indianapolis")
+    rmarkdown::render(input, output_file = paste0("letter_", stamp), ...)
+  })
+output:
+  word_document:
+    reference_docx: formatting/reference.docx
+    toc: false
+    number_sections: false
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+    number_sections: false
+    keep_tex: false
+fontsize: 11pt
+mainfont: Times New Roman
+geometry: margin=0.8in
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \renewcommand{\arraystretch}{1.0}
+  - \setlength{\tabcolsep}{3pt}
+params:
+  results_source: "frozen"
+  run_id: ""
+  show_code: false
+---
+
+<!-- Title page -->
+
+::: {custom-style="Author"}
+
+^1^ Department of Anthropology, Purdue University, West Lafayette, IN 47907-2059, USA.
+
+**Corresponding author**
+
+| Erik Otárola-Castillo
+| Department of Anthropology, Purdue University
+| Stone Hall, Suite 303
+| 700 Mitch Daniels Blvd.
+| West Lafayette, IN 47907-2059, USA
+| Email: eoc@purdue.edu
+| Telephone: +1 631-796-7331
+
+:::
+
+\newpage
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = params$show_code, message = FALSE, warning = FALSE,
+                      out.width = "6.9in")
+
+# Read frozen results by default, or a named refit/recalculate result folder.
+HomeFolder <- ".."
+frozen_dir <- file.path(HomeFolder, "results", "frozen", "run1")
+data_directory <- if (params$results_source == "frozen") frozen_dir else
+  file.path(data_directory, "results", params$results_source, params$run_id)
+
+source("../scripts/helper_functions.R", local = TRUE)
+```
+
+```{r word-count, include=FALSE}
+# Count the main text only. Each inline number counts once.
+count_source <- readLines("letter.Rmd", encoding = "UTF-8", warn = FALSE)
+first <- match("<!-- MAIN TEXT BEGIN -->", count_source)
+last <- match("<!-- MAIN TEXT END -->", count_source)
+count_lines <- count_source[(first + 1):(last - 1)]
+count_lines <- count_lines[!grepl("^\\*\\*Word count \\(main text", count_lines)]
+count_lines <- gsub("`r [^`]+`", "x", count_lines, perl = TRUE)
+words <- strsplit(trimws(paste(count_lines, collapse = " ")), "[[:space:]]+", perl = TRUE)[[1]]
+word_count <- sum(nzchar(words))
+```
+
+<!-- MAIN TEXT BEGIN -->
+
+Eren et al. (1) explicitly test Clovis atlatl use, a long-standing assumption in Paleoindian archaeology. Their probabilistic chronological analysis shows that the earliest physical atlatls appear well after Clovis. This is a valuable contribution. However, we question how strong the chronological gap functions as evidence against Clovis atlatl use. Two questions arise, 1) how strongly does the absence of preserved atlatl components indicate technological absence, and 2) what independent evidence does Clovis point morphology provide?
+
+We build on an earlier Bayesian model that used stone point morphology to infer stone-weapon delivery-technology (2:1195-1198). To address both questions, we add a hierarchical framework (2:1202) to separate behavioral processes from archaeological observations (3). We define atlatl use and weapon-delivery technology as behavioral processes. We observe these processes through surviving weapon components, their morphometrics, and associated radiocarbon dates, which imperfectly reflect them because materials must enter the archaeological record, survive, be found, and be recognized before we can measure or date them.
+
+We estimated Clovis atlatl presence and absence probabilities from chronology and the probabilities of weapon-delivery technologies given point-morphology and atlatl chronology (1). Cumulative taphonomic loss may underrepresent older events. Accordingly, our chronological models account for site loss (4) and wood preservation (5), assuming complete observation conditional on preservation. The model output is shown in Figure 1.
+
+First, we compared two scenarios: 1) the probability of Clovis-age atlatls present and 2) probability of Clovis atlatls absent; given the same radiocarbon evidence and preservation decay functions. Absence posterior probability was `r sprintf("%.3f", bf$absence_presence / (1 + bf$absence_presence))` and presence `r sprintf("%.3f", 1 / (1 + bf$absence_presence))`. Evidence favoring absence was negligible, with a Bayes factor for absence:presence of `r sprintf("%.3f", bf$absence_presence)` (similar marginal-likelihood for each scenario).
+
+Second, we combined chronology with a proxy measure for ballistic delivery (point tip cross-sectional area [TCSA]). We compared 75 Clovis points (29 from the Vail site, 46 from other Great Plains sites; 6, 7) with 1,410 known-function reference weapon tips (7–9). The reference data have limitations; however, our approach focuses on isolating the signal to support inference.
+
+Our reference comparison cumulatively includes stone arrow and atlatl dart tips (Fig. 1b), experimental thrusting (Fig. 1c), and nonlithic throwing points (Fig. 1d). Atlatl support among the stone-tip bow and atlatl references is `r sprintf("%.1f%%", 100 *table1$raw[["Atlatl"]][[1]])`. Adding thrusting makes it the leading prediction (`r sprintf("%.1f%%", 100 *table1$raw[["Contact/thrusting"]][[2]])`). The full-comparison predictions are `r sprintf("%.1f%%", 100 *table1$raw[["Short-range throwing/thrusting"]][[3]])` short-range throwing/thrusting, `r sprintf("%.1f%%", 100 *table1$raw[["Contact/thrusting"]][[3]])` contact/thrusting, `r sprintf("%.1f%%", 100 *table1$raw[["Hand-thrown"]][[3]])` hand-thrown, `r sprintf("%.1f%%", 100 *table1$raw[["Atlatl"]][[3]])` atlatl, and `r sprintf("%.1f%%", 100 *table1$raw[["Bow"]][[3]])` bow (Table 1).
+
+Eren et al. conclude that the radiocarbon record does not support Clovis atlatl use. We agree. However, that record alone cannot establish such use. Once preservation is accounted for finding no Clovis-age atlatls is only weak evidence that none were deposited (BF `r sprintf("%.3f", bf$absence_presence)`). We extend Eren et al.’s study by quantifying support for competing delivery hypotheses. TCSA values of the sampled Clovis points resemble hand-thrown and thrusting spear references more than the atlatl, while bow delivery is strongly disfavored. Better reference collections, preservation curves, and survey and detection data may revise these conditional predictions and change our inference (10).
+
+**Word count (main text): `r word_count`**
+
+<!-- MAIN TEXT END -->
+
+\newpage
+
+**Figure 1.** Preservation, atlatl chronology, and posterior TCSA distributions. (a) shows a cohort deposited at 13.34 ka BP, with the wood (blue) and site survival (dashed-orange) functions and their product (black). The green line shows a normalized SPD of 66 calibrated atlatl dates (1). The shading indicates the Clovis range (13.34-12.71 ka BP). (b–d) Reference comparisons cumulatively include stone arrow and atlatl dart tips (b), experimental thrusting (c), and nonlithic throwing points (d). The dashed blue curves in b–d represent the independent pooled Clovis prediction. The solid curves are reference predictions from separately fitted models.
+
+```{r figure1, out.width="6.9in", fig.cap=""}
+knitr::include_graphics(figure_path)
+```
+
+**Table 1.** Clovis weapon-delivery probabilities.
+
+```{r table1, results='asis'}
+table1_display <- table1$display
+if (knitr::is_latex_output()) {
+  table1_display[is.na(table1$raw)] <- "---"
+  knitr::kable(table1_display, format = "latex", row.names = FALSE,
+    align = c("l", rep("r", 5)), booktabs = TRUE, escape = TRUE) |>
+    kableExtra::row_spec(0, bold = TRUE)
+} else {
+  table1_display[is.na(table1$raw)] <- "&mdash;"
+  knitr::kable(table1_display, format = "pipe", row.names = FALSE,
+    col.names = paste0("**", names(table1_display), "**"),
+    align = c("l", rep("r", 5)), escape = FALSE)
+}
+```
+
+Dashes indicate profiles not represented in that comparison.
+
+**Data and Code Availability.** Data, code, and reproducibility materials are available for review at https://github.com/dreoc/probabilities-of-clovis-atlatl-use
+
+.
+
+## References
+
+1. M. I. Eren, M. R. Bebber, R. S. Walker, C. R. Johnson, B. Buchanan, Late Pleistocene Clovis atlatl hunting fails a chronological modeling test. Proc. Natl. Acad. Sci. U.S.A. 123, e2607964123 (2026). doi:10.1073/pnas.2607964123.
+2. E. R. Otárola-Castillo, M. G. Torquato, and C. E. Buck, The Bayesian Inferential Paradigm in Archaeology. Handbook of Archaeological Sciences, 2nd ed., pp. 1193-1209 (2023). doi:https://onlinelibrary.wiley.com/doi/abs/10.1002/9781119592112.ch59.
+3. J. A. Royle, R. M. Dorazio, "Modeling occupancy and occurrence probability". in Hierarchical Modeling and Inference in Ecology: The Analysis of Data from Populations, Metapopulations and Communities (Academic Press, 2008), chap. 3, pp. 83-125.
+4. T. A. Surovell, J. B. Finley, G. M. Smith, P. J. Brantingham, R. L. Kelly, Correcting temporal frequency distributions for taphonomic bias. J. Archaeol. Sci. 36, 1715-1724 (2009). doi:10.1016/j.jas.2009.03.029.
+5. S. B. Perez, J. M. Fraterrigo, J. W. Dalling, Interspecific wood trait variation predicts decreased carbon residence time in changing forests. Funct. Ecol. 36, 674-685 (2022). doi:10.1111/1365-2435.13936.
+6. M. I. Eren, M. R. Bebber, E. J. Knell, B. Story, B. Buchanan, Plains Paleoindian projectile point penetration potential. J. Anthropol. Res. 78, 84-112 (2022). doi:10.1086/717831.
+7. J. J. Shea, The origins of lithic projectile point technology: Evidence from Africa, the Levant, and Europe. J. Archaeol. Sci. 33, 823-846 (2006). doi:10.1016/j.jas.2005.10.015.
+8. C. Clarkson, Testing archaeological approaches to determining past projectile delivery systems using ethnographic and experimental data. In Multidisciplinary Approaches to the Study of Stone Age Weaponry, R. Iovita, K. Sano, Eds. (Springer, 2016), pp. 189-201. doi:10.1007/978-94-017-7602-8_13.
+9. Y. Sahle, M. Lombard, The evolution of long-range hunting with stone-tipped weapons during the Afrotropic Middle Stone Age: A testable framework based on tip cross-sectional area. Quaternary 7, 50 (2024). doi:10.3390/quat7040050.
+10. B. J. Schoville, K. S. Brown, J. A. Harris, J. Wilkins, New experiments and a model-driven approach for interpreting Middle Stone Age lithic point function using the edge damage distribution method. PLoS ONE 11, e0164088 (2016). doi:10.1371/journal.pone.0164088.
